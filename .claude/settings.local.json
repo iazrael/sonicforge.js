@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:gemini.google.com)",
+      "mcp__web-reader__webReader",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_close",
+      "Bash(npm run test:run:*)",
+      "Bash(npm run test:coverage)",
+      "Bash(tree:*)",
+      "Skill(code-review:code-review)"
+    ]
+  }
+}

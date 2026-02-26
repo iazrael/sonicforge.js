@@ -18,6 +18,8 @@ export class AudioEngine {
   private analyser: AnalyserNode | null = null
   private compressor: DynamicsCompressorNode | null = null
   private noiseBuffer: AudioBuffer | null = null
+  private masterVolume: number = 0.8
+  private resumePromise: Promise<void> | null = null
 
   /**
    * 初始化音频引擎
@@ -30,7 +32,7 @@ export class AudioEngine {
 
     // 主增益节点
     this.masterGain = this.ctx.createGain()
-    this.masterGain.gain.value = 0.8
+    this.masterGain.gain.value = this.masterVolume
 
     // 频谱分析器（用于可视化）
     this.analyser = this.ctx.createAnalyser()
@@ -81,18 +83,38 @@ export class AudioEngine {
    * @param config 音效配置对象
    * @param pan 立体声位置 (-1 左 ~ 1 右)
    */
-  play(config: SoundConfig, pan: number = 0): void {
+  async play(config: SoundConfig, pan: number = 0): Promise<void> {
+    // 参数验证
+    if (!config?.layers || config.layers.length === 0) {
+      console.warn('[AudioEngine] Invalid config: no layers to play')
+      return
+    }
+
+    // 验证并 clamp pan 值
+    const clampedPan = this.clampPan(pan)
+    if (pan !== clampedPan) {
+      console.warn(`[AudioEngine] Pan value ${pan} out of range [-1, 1], clamped to ${clampedPan}`)
+    }
+
     if (!this.ctx) this.init()
-    if (this.ctx!.state === 'suspended') this.ctx!.resume()
+
+    // 确保 AudioContext 已恢复（修复异步问题）
+    if (this.ctx!.state === 'suspended') {
+      // 复用相同的 promise 避免多次调用
+      if (!this.resumePromise) {
+        this.resumePromise = this.ctx!.resume().finally(() => {
+          this.resumePromise = null
+        })
+      }
+      await this.resumePromise
+    }
 
     const startTime = this.ctx!.currentTime
-    const layers = config.layers || []
-
-    if (layers.length === 0) return
+    const layers = config.layers
 
     // 创建声像定位节点
     const panner = this.ctx!.createStereoPanner()
-    panner.pan.value = this.clampPan(pan)
+    panner.pan.value = clampedPan
     panner.connect(this.masterGain!)
 
     layers.forEach((layer) => {
@@ -126,9 +148,12 @@ export class AudioEngine {
     osc.type = waveform
 
     // 频率包络：从起始频率扫到结束频率
-    osc.frequency.setValueAtTime(frequency[0], startTime)
+    // 同时保护起始和结束频率，防止 exponentialRampToValueAtTime 异常
+    const startFreq = Math.max(1, frequency[0])
+    const endFreq = Math.max(1, frequency[1])
+    osc.frequency.setValueAtTime(startFreq, startTime)
     osc.frequency.exponentialRampToValueAtTime(
-      Math.max(1, frequency[1]),
+      endFreq,
       startTime + duration
     )
 
@@ -166,9 +191,12 @@ export class AudioEngine {
     filter.Q.value = q
 
     // 滤波器频率扫频：从高频快速降到低频（模拟爆炸衰减）
-    filter.frequency.setValueAtTime(filterFreq[0], startTime)
+    // 同时保护起始和结束频率
+    const startFilterFreq = Math.max(1, filterFreq[0])
+    const endFilterFreq = Math.max(1, filterFreq[1])
+    filter.frequency.setValueAtTime(startFilterFreq, startTime)
     filter.frequency.exponentialRampToValueAtTime(
-      Math.max(1, filterFreq[1]),
+      endFilterFreq,
       startTime + duration
     )
 
@@ -199,6 +227,7 @@ export class AudioEngine {
   ): void {
     const { waveform, gain, notes } = config
     let timeOffset = 0
+    const attackTime = 0.005 // 5ms 攻击时间防止咔嗒声
 
     notes.forEach((note) => {
       const osc = this.ctx!.createOscillator()
@@ -207,7 +236,10 @@ export class AudioEngine {
       osc.type = waveform
       osc.frequency.setValueAtTime(note.freq, startTime + timeOffset)
 
-      gainNode.gain.setValueAtTime(gain, startTime + timeOffset)
+      // 增益包络：从 0 开始，快速攻击到目标增益，然后指数衰减
+      // 这可以防止音符之间出现咔嗒声
+      gainNode.gain.setValueAtTime(0, startTime + timeOffset)
+      gainNode.gain.linearRampToValueAtTime(gain, startTime + timeOffset + attackTime)
       gainNode.gain.exponentialRampToValueAtTime(
         0.001,
         startTime + timeOffset + note.dur
@@ -217,7 +249,7 @@ export class AudioEngine {
       gainNode.connect(destination)
 
       osc.start(startTime + timeOffset)
-      osc.stop(startTime + timeOffset + note.dur)
+      osc.stop(startTime + timeOffset + note.dur + 0.1)
 
       timeOffset += note.dur
     })
@@ -231,5 +263,24 @@ export class AudioEngine {
     const data = new Uint8Array(this.analyser.frequencyBinCount)
     this.analyser.getByteFrequencyData(data)
     return data
+  }
+
+  /**
+   * 设置主音量
+   * @param volume 音量值 (0.0 - 1.0)
+   */
+  setVolume(volume: number): void {
+    this.masterVolume = Math.max(0, Math.min(1, volume))
+    if (this.masterGain) {
+      this.masterGain.gain.value = this.masterVolume
+    }
+  }
+
+  /**
+   * 获取当前主音量
+   * @returns 当前音量值 (0.0 - 1.0)
+   */
+  getVolume(): number {
+    return this.masterVolume
   }
 }

@@ -13,7 +13,7 @@ export const UI_SOUNDS: Record<string, SoundConfig> = {
     layers: [{
       type: 'tone',
       waveform: 'sine',
-      frequency: [800, 1200],
+      frequency: [600, 900],
       duration: 0.1,
       gain: 0.3
     }]
@@ -22,7 +22,7 @@ export const UI_SOUNDS: Record<string, SoundConfig> = {
     layers: [{
       type: 'tone',
       waveform: 'sine',
-      frequency: [800, 1600],
+      frequency: [1000, 1800],
       duration: 0.15,
       gain: 0.3
     }]

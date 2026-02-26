@@ -93,7 +93,7 @@ const createMockAudioContext = () => ({
   createBuffer: vi.fn((channels: number, length: number, sampleRate: number) =>
     createMockAudioBuffer(channels, length, sampleRate)
   ),
-  resume: vi.fn(),
+  resume: vi.fn(() => Promise.resolve()),
   destination: {},
 })
 
@@ -591,6 +591,54 @@ describe('AudioEngine', () => {
       // Second note starts after first note duration
       expect(mockOscillators[1].start).toHaveBeenCalledWith(0.1)
     })
+
+    it('should apply attack envelope to sequence notes to prevent clicking', () => {
+      const engine = new AudioEngine()
+
+      // Track all gain nodes created
+      const createdGainNodes: ReturnType<typeof createMockGainNode>[] = []
+      const originalCreateGain = mockContext.createGain
+      mockContext.createGain = vi.fn(() => {
+        const gainNode = originalCreateGain()
+        createdGainNodes.push(gainNode)
+        return gainNode
+      })
+
+      const mockOscillators: ReturnType<typeof createMockOscillator>[] = []
+      for (let i = 0; i < 3; i++) {
+        mockOscillators.push(createMockOscillator())
+      }
+      mockContext.createOscillator = vi.fn()
+        .mockReturnValueOnce(mockOscillators[0])
+        .mockReturnValueOnce(mockOscillators[1])
+        .mockReturnValueOnce(mockOscillators[2])
+
+      engine.init()
+
+      const config: SoundConfig = {
+        layers: [{
+          type: 'sequence',
+          waveform: 'sine',
+          gain: 0.3,
+          notes: [
+            { freq: 523.25, dur: 0.1 },
+            { freq: 659.25, dur: 0.1 },
+            { freq: 783.99, dur: 0.1 },
+          ],
+        }]
+      }
+
+      engine.play(config)
+
+      // Find sequence-specific gain nodes (after masterGain, panner, analyser, compressor)
+      // First 4 are init-related, next 3 are sequence notes
+      const sequenceGainNodes = createdGainNodes.slice(-3)
+
+      // First note's gain envelope should start at 0, ramp to gain (attack), then decay
+      expect(sequenceGainNodes[0].gain.setValueAtTime).toHaveBeenCalledWith(0, expect.any(Number))
+      expect(sequenceGainNodes[0].gain.linearRampToValueAtTime).toHaveBeenCalledWith(0.3, expect.any(Number))
+      expect(sequenceGainNodes[0].gain.exponentialRampToValueAtTime).toHaveBeenCalledWith(0.001, expect.any(Number))
+    })
   })
 
   describe('getFrequencyData()', () => {
@@ -769,6 +817,159 @@ describe('AudioEngine', () => {
       }
 
       expect(() => engine.play(config)).not.toThrow()
+    })
+  })
+
+  describe('Volume Control', () => {
+    it('should get default volume 0.8', () => {
+      const engine = new AudioEngine()
+      expect(engine.getVolume()).toBe(0.8)
+    })
+
+    it('should set volume within valid range', () => {
+      const engine = new AudioEngine()
+
+      const mockMasterGain = createMockGainNode()
+      mockContext.createGain = vi.fn(() => mockMasterGain)
+
+      engine.init()
+      engine.setVolume(0.5)
+
+      expect(engine.getVolume()).toBe(0.5)
+      expect(mockMasterGain.gain.value).toBe(0.5)
+    })
+
+    it('should clamp volume to maximum 1.0', () => {
+      const engine = new AudioEngine()
+      engine.setVolume(1.5)
+      expect(engine.getVolume()).toBe(1.0)
+    })
+
+    it('should clamp volume to minimum 0.0', () => {
+      const engine = new AudioEngine()
+      engine.setVolume(-0.5)
+      expect(engine.getVolume()).toBe(0.0)
+    })
+
+    it('should update master gain when volume changes after init', () => {
+      const engine = new AudioEngine()
+
+      const mockMasterGain = createMockGainNode()
+      mockContext.createGain = vi.fn(() => mockMasterGain)
+
+      engine.init()
+      engine.setVolume(0.3)
+
+      expect(mockMasterGain.gain.value).toBe(0.3)
+    })
+  })
+
+  describe('Parameter Validation', () => {
+    it('should handle null/undefined config', async () => {
+      const engine = new AudioEngine()
+      engine.init()
+
+      // @ts-expect-error - Testing invalid input
+      await expect(engine.play(null)).resolves.toBeUndefined()
+      // @ts-expect-error - Testing invalid input
+      await expect(engine.play(undefined)).resolves.toBeUndefined()
+    })
+
+    it('should warn when pan value exceeds range', async () => {
+      const engine = new AudioEngine()
+      engine.init()
+
+      const config: SoundConfig = {
+        layers: [{
+          type: 'tone',
+          waveform: 'sine',
+          frequency: [440, 440],
+          duration: 0.1,
+          gain: 0.3,
+        }]
+      }
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await engine.play(config, 2)
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[AudioEngine] Pan value 2 out of range [-1, 1], clamped to 1'
+      )
+
+      warnSpy.mockRestore()
+    })
+
+    it('should warn when pan value is below range', async () => {
+      const engine = new AudioEngine()
+      engine.init()
+
+      const config: SoundConfig = {
+        layers: [{
+          type: 'tone',
+          waveform: 'sine',
+          frequency: [440, 440],
+          duration: 0.1,
+          gain: 0.3,
+        }]
+      }
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await engine.play(config, -2)
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[AudioEngine] Pan value -2 out of range [-1, 1], clamped to -1'
+      )
+
+      warnSpy.mockRestore()
+    })
+
+    it('should protect start frequency from being 0 or negative', () => {
+      const engine = new AudioEngine()
+
+      const mockOscillator = createMockOscillator()
+      mockContext.createOscillator = vi.fn(() => mockOscillator)
+
+      engine.init()
+
+      const config: SoundConfig = {
+        layers: [{
+          type: 'tone',
+          waveform: 'sine',
+          frequency: [0, 440], // Start frequency is 0
+          duration: 0.1,
+          gain: 0.3,
+        }]
+      }
+
+      engine.play(config)
+
+      // Should protect start frequency to minimum 1Hz
+      expect(mockOscillator.frequency.setValueAtTime).toHaveBeenCalledWith(1, expect.any(Number))
+    })
+
+    it('should protect filter start frequency from being 0 or negative', () => {
+      const engine = new AudioEngine()
+
+      const mockFilter = createMockBiquadFilter()
+      mockContext.createBiquadFilter = vi.fn(() => mockFilter)
+
+      engine.init()
+
+      const config: SoundConfig = {
+        layers: [{
+          type: 'noise',
+          duration: 0.3,
+          gain: 0.5,
+          filterFreq: [0, 50], // Start frequency is 0
+        }]
+      }
+
+      engine.play(config)
+
+      // Should protect start frequency to minimum 1Hz
+      expect(mockFilter.frequency.setValueAtTime).toHaveBeenCalledWith(1, expect.any(Number))
     })
   })
 })

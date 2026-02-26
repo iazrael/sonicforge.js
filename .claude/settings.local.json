@@ -9,7 +9,9 @@
       "Bash(npm run test:run:*)",
       "Bash(npm run test:coverage)",
       "Bash(tree:*)",
-      "Skill(code-review:code-review)"
+      "Skill(code-review:code-review)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\ndocs: add CLAUDE.md for future Claude Code instances\n\n- Common development commands \\(test, build, dev\\)\n- Core audio flow architecture\n- Sound preset structure and patterns\n- Important implementation notes\n- Testing approach and coverage thresholds\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

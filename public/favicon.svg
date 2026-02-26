@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="fg" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#ff6b35"/>
+      <stop offset="100%" style="stop-color:#ffcc02"/>
+    </linearGradient>
+    <linearGradient id="wg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#a855f7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="64" height="64" rx="12" fill="#1a1a2e"/>
+
+  <!-- 火焰 -->
+  <ellipse cx="32" cy="40" rx="8" ry="3" fill="url(#fg)" opacity="0.6"/>
+  <ellipse cx="32" cy="35" rx="6" ry="5" fill="url(#fg)" opacity="0.8"/>
+  <ellipse cx="32" cy="28" rx="4" ry="6" fill="url(#fg)"/>
+  <ellipse cx="32" cy="22" rx="2" ry="4" fill="#ffcc02"/>
+
+  <!-- 声波 -->
+  <path d="M 12 24 Q 20 32 12 40" stroke="url(#wg)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M 52 24 Q 44 32 52 40" stroke="url(#wg)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M 18 20 Q 28 32 18 44" stroke="url(#wg)" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M 46 20 Q 36 32 46 44" stroke="url(#wg)" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- 波形线 -->
+  <polyline points="24,32 28,24 32,40 36,20 40,32"
+            fill="none" stroke="url(#fg)" stroke-width="2.5"
+            stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

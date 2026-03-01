@@ -5,9 +5,6 @@
 
 import type { ToneConfig, NoiseConfig, SequenceConfig, SoundConfig } from './types'
 
-// Re-export types for convenience
-export type { ToneConfig, NoiseConfig, SequenceConfig, SoundConfig }
-
 /**
  * AudioEngine - 核心音频引擎类
  * 负责初始化音频上下文、播放音效、频谱分析
@@ -28,7 +25,7 @@ export class AudioEngine {
   init(): void {
     if (this.ctx) return
 
-    this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    this.ctx = new AudioContext()
 
     // 主增益节点
     this.masterGain = this.ctx.createGain()
